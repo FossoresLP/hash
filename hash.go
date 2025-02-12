@@ -4,6 +4,7 @@
 // Types that cannot be resolved to a primitive type (chan, func, unsafe.Pointer) are not supported and will be silently ignored.
 // The hash is calculated using reflection, so there is a performance cost and the result is not guaranteed to be stable across different Go versions.
 // The hash is calculated in a way that avoids heap allocations as much as possible. Only reflection on maps causes heap allocations.
+// A special case is implemented for map[string]any to avoid heap allocations.
 
 package hash
 
@@ -94,9 +95,17 @@ func hashValue(v reflect.Value, h hash.Hash, buf []byte) {
 			hashValue(v.Field(i), h, buf)
 		}
 	case reflect.Map:
-		for i := v.MapRange(); i.Next(); {
-			hashValue(i.Key(), h, buf)
-			hashValue(i.Value(), h, buf)
+		switch m := v.Interface().(type) {
+		case map[string]any:
+			for k, v := range m {
+				h.Write(unsafe.Slice(unsafe.StringData(k), len(k)))
+				hashValue(reflect.ValueOf(v), h, buf)
+			}
+		default:
+			for i := v.MapRange(); i.Next(); {
+				hashValue(i.Key(), h, buf)
+				hashValue(i.Value(), h, buf)
+			}
 		}
 	case reflect.Interface, reflect.Pointer:
 		if !v.IsNil() {
