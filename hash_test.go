@@ -1,6 +1,7 @@
 package hash_test
 
 import (
+	"crypto/sha256"
 	"testing"
 	"time"
 
@@ -65,9 +66,21 @@ func BenchmarkHashStruct(b *testing.B) {
 			},
 		},
 	}
-	for i := 0; i < b.N; i++ {
-		_ = hash.Hash(example)
-	}
+	b.Run("xxhash64", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = hash.Hash(example)
+		}
+	})
+	b.Run("xxhash128", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = hash.Hash128(example)
+		}
+	})
+	b.Run("sha256", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = hash.HashWithHash(example, sha256.New())
+		}
+	})
 }
 
 func BenchmarkHashStructRealistic(b *testing.B) {
@@ -105,7 +118,19 @@ func BenchmarkHashStructRealistic(b *testing.B) {
 			DeletedAt:   &time.Time{},
 		},
 	}
-	for i := 0; i < b.N; i++ {
-		_ = hash.Hash(s)
-	}
+	b.Run("xxhash64", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = hash.Hash(s)
+		}
+	})
+	b.Run("xxhash128", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = hash.Hash128(s)
+		}
+	})
+	b.Run("sha256", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = hash.HashWithHash(s, sha256.New())
+		}
+	})
 }

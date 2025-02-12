@@ -3,6 +3,7 @@
 // Arrays, slices, structs, maps, interfaces, and pointers are supported.
 // Types that cannot be resolved to a primitive type (chan, func, unsafe.Pointer) are not supported and will be silently ignored.
 // The hash is calculated using reflection, so there is a performance cost and the result is not guaranteed to be stable across different Go versions.
+// The hash is calculated in a way that avoids heap allocations as much as possible. Only reflection on maps causes heap allocations.
 
 package hash
 
@@ -14,27 +15,40 @@ import (
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/zeebo/xxh3"
 )
 
 // Hash tries to hash the given data using xxhash64 using reflection.
-// It supports the following types:
-// - bool
-// - int, int8, int16, int32, int64
-// - uint, uint8, uint16, uint32, uint64, uintptr (by its value, not what it points to)
-// - float32, float64
-// - complex64, complex128
-// - string
-// - array, slice
-// - struct
-// - map
-// - interface, pointer
-// Data of other types such as chan, func, and unsafe.Pointer are not supported and will be silently ignored.
-// Heap allocations are avoided as much as possible. Only maps cause heap allocations.
+// See the package documentation for more information on supported types and limitations.
 func Hash(data any) []byte {
 	h := xxhash.New()
 	buf := make([]byte, 16)
 	hashValue(reflect.ValueOf(data), h, buf)
 	return h.Sum(buf[:0])
+}
+
+// Hash128 tries to hash the given data using xxhash128 (a variant of xxh3) using reflection.
+// See the package documentation for more information on supported types and limitations.
+func Hash128(data any) []byte {
+	h := xxh3.New()
+	buf := make([]byte, 16)
+	hashValue(reflect.ValueOf(data), h, buf)
+	buf = buf[:16]
+	sum := h.Sum128()
+	binary.BigEndian.PutUint64(buf[:8], sum.Hi)
+	binary.BigEndian.PutUint64(buf[8:], sum.Lo)
+	return buf
+}
+
+// HashWithHash tries to hash the given data using the provided hash.Hash using reflection.
+// See the package documentation for more information on supported types and limitations.
+// The hash.Hash must be reset before calling this function and it must not be used concurrently.
+// The hash.Hash must be a hash function that produces a fixed-size output and writes must not return an error.
+func HashWithHash(data any, h hash.Hash) []byte {
+	buf := make([]byte, max(16, h.Size()))
+	hashValue(reflect.ValueOf(data), h, buf)
+	h.Sum(buf[:0])
+	return buf
 }
 
 func hashValue(v reflect.Value, h hash.Hash, buf []byte) {
