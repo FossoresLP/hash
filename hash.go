@@ -8,8 +8,10 @@ package hash
 
 import (
 	"encoding/binary"
+	"hash"
 	"math"
 	"reflect"
+	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
 )
@@ -28,61 +30,63 @@ import (
 // - interface, pointer
 // Data of other types such as chan, func, and unsafe.Pointer are not supported and will be silently ignored.
 // Heap allocations are avoided as much as possible. Only maps cause heap allocations.
-func Hash(data interface{}) []byte {
+func Hash(data any) []byte {
 	h := xxhash.New()
-	hashValue(reflect.ValueOf(data), h)
-	return h.Sum(nil)
+	buf := make([]byte, 16)
+	hashValue(reflect.ValueOf(data), h, buf)
+	return h.Sum(buf[:0])
 }
 
-func hashValue(v reflect.Value, h *xxhash.Digest) {
+func hashValue(v reflect.Value, h hash.Hash, buf []byte) {
 	if !v.IsValid() {
 		return
 	}
 
 	switch v.Kind() {
 	case reflect.Bool:
-		var buf [1]byte
+		buf = buf[:1]
 		if v.Bool() {
 			buf[0] = 1
 		} else {
 			buf[0] = 0
 		}
-		h.Write(buf[:])
+		h.Write(buf)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		var buf [8]byte
-		binary.BigEndian.PutUint64(buf[:], uint64(v.Int()))
-		h.Write(buf[:])
+		buf = buf[:8]
+		binary.BigEndian.PutUint64(buf, uint64(v.Int()))
+		h.Write(buf)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		var buf [8]byte
-		binary.BigEndian.PutUint64(buf[:], v.Uint())
-		h.Write(buf[:])
+		buf = buf[:8]
+		binary.BigEndian.PutUint64(buf, v.Uint())
+		h.Write(buf)
 	case reflect.Float32, reflect.Float64:
-		var buf [8]byte
-		binary.BigEndian.PutUint64(buf[:], math.Float64bits(v.Float()))
-		h.Write(buf[:])
+		buf = buf[:8]
+		binary.BigEndian.PutUint64(buf, math.Float64bits(v.Float()))
+		h.Write(buf)
 	case reflect.Complex64, reflect.Complex128:
-		var buf [16]byte
+		buf = buf[:16]
 		binary.BigEndian.PutUint64(buf[:8], math.Float64bits(real(v.Complex())))
 		binary.BigEndian.PutUint64(buf[8:], math.Float64bits(imag(v.Complex())))
-		h.Write(buf[:])
+		h.Write(buf)
 	case reflect.String:
-		h.WriteString(v.String())
+		str := v.String()
+		h.Write(unsafe.Slice(unsafe.StringData(str), len(str)))
 	case reflect.Array, reflect.Slice:
 		for i := 0; i < v.Len(); i++ {
-			hashValue(v.Index(i), h)
+			hashValue(v.Index(i), h, buf)
 		}
 	case reflect.Struct:
 		for i := 0; i < v.NumField(); i++ {
-			hashValue(v.Field(i), h)
+			hashValue(v.Field(i), h, buf)
 		}
 	case reflect.Map:
 		for i := v.MapRange(); i.Next(); {
-			hashValue(i.Key(), h)
-			hashValue(i.Value(), h)
+			hashValue(i.Key(), h, buf)
+			hashValue(i.Value(), h, buf)
 		}
 	case reflect.Interface, reflect.Pointer:
 		if !v.IsNil() {
-			hashValue(v.Elem(), h)
+			hashValue(v.Elem(), h, buf)
 		}
 	}
 }
